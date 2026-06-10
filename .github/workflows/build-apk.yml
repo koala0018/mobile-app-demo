@@ -27,7 +27,7 @@ jobs:
           sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Build debug APK
-        run: gradle assembleDebug
+        run: bash gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -12,6 +12,11 @@ A minimal Android demo app that shows a counter button on the phone.
 
 The repository includes a GitHub Actions workflow that builds a debug APK and uploads it as an artifact.
 
+You can also build locally with the wrapper scripts:
+
+- Windows: `.\gradlew.bat assembleDebug`
+- macOS/Linux: `bash ./gradlew assembleDebug`
+
 ## Install on a phone
 
 1. Download the `app-debug.apk` artifact from the GitHub Actions run.
