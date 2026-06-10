@@ -2,13 +2,26 @@ package com.example.mobileproject01;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -25,10 +38,18 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class MainActivity extends Activity implements RecordAdapter.OnRecordClickListener {
+public class MainActivity extends Activity implements RecordAdapter.OnRecordActionListener {
     private static final int REQUEST_PICK_IMAGE = 1001;
+    private static final int FILTER_ALL = 0;
+    private static final int FILTER_ADDRESS = 1;
+    private static final int FILTER_PHONE = 2;
+    private static final int FILTER_RECENT = 3;
+    private static final int FILTER_NOTES = 4;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final List<ScreenshotRecord> allRecords = new ArrayList<>();
+    private final List<ScreenshotRecord> visibleRecords = new ArrayList<>();
+
     private ScreenshotRepository repository;
     private RecordAdapter adapter;
     private RecyclerView recyclerView;
@@ -36,6 +57,17 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
     private StatChipView latestView;
     private TextView statusView;
     private View emptyStateView;
+    private TextView emptyTitleView;
+    private TextView emptyBodyView;
+    private Button emptyActionButton;
+    private EditText searchField;
+    private Button allFilterButton;
+    private Button addressFilterButton;
+    private Button phoneFilterButton;
+    private Button recentFilterButton;
+    private Button notesFilterButton;
+    private String currentQuery = "";
+    private int currentFilter = FILTER_ALL;
     private boolean importing;
 
     @Override
@@ -73,19 +105,22 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
 
     @Override
     public void onRecordClicked(ScreenshotRecord record) {
-        StringBuilder message = new StringBuilder();
-        message.append("店名：").append(safe(record.title)).append('\n');
-        message.append("地址：").append(safe(record.address)).append('\n');
-        message.append("电话：").append(safe(record.phone)).append('\n');
-        message.append("来源：").append(safe(record.sourceLabel)).append('\n');
-        message.append("时间：").append(formatDate(record.createdAt)).append('\n');
-        message.append("\n识别文本：\n").append(safe(record.rawText));
+        showRecordDialog(record);
+    }
 
-        new AlertDialog.Builder(this)
-                .setTitle(record.title)
-                .setMessage(message.toString())
-                .setPositiveButton("知道了", null)
-                .show();
+    @Override
+    public void onRecordEditRequested(ScreenshotRecord record) {
+        showRecordDialog(record);
+    }
+
+    @Override
+    public void onRecordDeleteRequested(ScreenshotRecord record) {
+        confirmDelete(record);
+    }
+
+    @Override
+    public void onRecordMapRequested(ScreenshotRecord record) {
+        openMap(record.address);
     }
 
     private void buildUi() {
@@ -94,6 +129,15 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
 
         ParticleFieldView background = new ParticleFieldView(this);
         root.addView(background, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+
+        View glow = new View(this);
+        GradientDrawable glowDrawable = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{0x336EE7FF, 0x00000000});
+        glow.setBackground(glowDrawable);
+        root.addView(glow, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -120,19 +164,26 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
         LinearLayout heroCard = new LinearLayout(this);
         heroCard.setOrientation(LinearLayout.VERTICAL);
         heroCard.setPadding(dp(18), dp(18), dp(18), dp(18));
-        heroCard.setBackground(Styles.cardBackground(0xFF12243D, 0xFF1A3354));
+        heroCard.setBackground(Styles.panelBackground());
         heroCard.setElevation(dp(8));
 
+        TextView eyebrow = Styles.badge(this, "本地收藏 · OCR 归档");
+        eyebrow.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
         TextView title = Styles.title(this, getString(R.string.app_name));
-        TextView subtitle = Styles.body(this, "截图一下，自动识别店名、地址、电话，并存到本机。");
-        subtitle.setPadding(0, dp(8), 0, dp(16));
+        title.setPadding(0, dp(12), 0, 0);
+
+        TextView subtitle = Styles.body(this, "把看到的店面、地址、电话和截图本身都收进来，之后还能搜索、编辑、删除并一键打开高德地图。");
+        subtitle.setPadding(0, dp(10), 0, dp(16));
 
         LinearLayout statsRow = new LinearLayout(this);
         statsRow.setOrientation(LinearLayout.HORIZONTAL);
         statsRow.setWeightSum(2f);
 
-        countView = Styles.statChip(this, "0 条记录", "总收纳");
-        latestView = Styles.statChip(this, "暂无记录", "最新一条");
+        countView = Styles.statChip(this, "0 条记录", "全部");
+        latestView = Styles.statChip(this, "暂无记录", "最近一条");
 
         LinearLayout.LayoutParams statLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         statLp.rightMargin = dp(8);
@@ -140,40 +191,126 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
         LinearLayout.LayoutParams statLp2 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         statsRow.addView(latestView, statLp2);
 
+        heroCard.addView(eyebrow);
         heroCard.addView(title);
         heroCard.addView(subtitle);
         heroCard.addView(statsRow);
         scrollChild.addView(heroCard);
 
+        LinearLayout searchCard = new LinearLayout(this);
+        searchCard.setOrientation(LinearLayout.VERTICAL);
+        searchCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        searchCard.setBackground(Styles.panelBackground());
+        searchCard.setElevation(dp(6));
+        LinearLayout.LayoutParams searchCardLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        searchCardLp.topMargin = dp(14);
+        scrollChild.addView(searchCard, searchCardLp);
+
+        TextView searchLabel = Styles.sectionTitle(this, "搜索与筛选");
+        searchCard.addView(searchLabel);
+
+        LinearLayout searchRow = new LinearLayout(this);
+        searchRow.setOrientation(LinearLayout.HORIZONTAL);
+        searchRow.setPadding(0, dp(10), 0, 0);
+
+        searchField = Styles.inputField(this, "搜索标题、地址、电话、备注", false);
+        searchField.setInputType(InputType.TYPE_CLASS_TEXT);
+        searchField.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                currentQuery = s == null ? "" : s.toString();
+                applyFilters();
+            }
+        });
+
+        Button clearButton = Styles.secondaryButton(this, "清空");
+        clearButton.setOnClickListener(v -> searchField.setText(""));
+
+        LinearLayout.LayoutParams searchFieldLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        searchFieldLp.rightMargin = dp(8);
+        searchRow.addView(searchField, searchFieldLp);
+        searchRow.addView(clearButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        searchCard.addView(searchRow);
+
+        LinearLayout filterRow = new LinearLayout(this);
+        filterRow.setOrientation(LinearLayout.HORIZONTAL);
+        filterRow.setPadding(0, dp(12), 0, 0);
+
+        allFilterButton = Styles.chipButton(this, "全部");
+        addressFilterButton = Styles.chipButton(this, "有地址");
+        phoneFilterButton = Styles.chipButton(this, "有电话");
+        recentFilterButton = Styles.chipButton(this, "近 7 天");
+        notesFilterButton = Styles.chipButton(this, "有备注");
+
+        allFilterButton.setOnClickListener(v -> setFilter(FILTER_ALL));
+        addressFilterButton.setOnClickListener(v -> setFilter(FILTER_ADDRESS));
+        phoneFilterButton.setOnClickListener(v -> setFilter(FILTER_PHONE));
+        recentFilterButton.setOnClickListener(v -> setFilter(FILTER_RECENT));
+        notesFilterButton.setOnClickListener(v -> setFilter(FILTER_NOTES));
+
+        filterRow.addView(allFilterButton);
+        LinearLayout.LayoutParams chipMargin1 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipMargin1.leftMargin = dp(8);
+        filterRow.addView(addressFilterButton, chipMargin1);
+        LinearLayout.LayoutParams chipMargin2 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipMargin2.leftMargin = dp(8);
+        filterRow.addView(phoneFilterButton, chipMargin2);
+        LinearLayout.LayoutParams chipMargin3 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipMargin3.leftMargin = dp(8);
+        filterRow.addView(recentFilterButton, chipMargin3);
+        LinearLayout.LayoutParams chipMargin4 = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipMargin4.leftMargin = dp(8);
+        filterRow.addView(notesFilterButton, chipMargin4);
+        searchCard.addView(filterRow);
+
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, dp(14), 0, dp(10));
+        actions.setPadding(0, dp(14), 0, 0);
 
         Button importButton = Styles.primaryButton(this, "导入截图");
         importButton.setOnClickListener(v -> openImagePicker());
 
-        Button refreshButton = Styles.secondaryButton(this, "刷新列表");
+        Button refreshButton = Styles.secondaryButton(this, "刷新");
         refreshButton.setOnClickListener(v -> refreshRecords());
 
         LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         buttonLp.rightMargin = dp(8);
         actions.addView(importButton, buttonLp);
-
         LinearLayout.LayoutParams buttonLp2 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         actions.addView(refreshButton, buttonLp2);
-        scrollChild.addView(actions);
+        searchCard.addView(actions);
 
-        statusView = Styles.body(this, "准备好了，分享一张截图进来就会自动识别。");
-        statusView.setPadding(dp(4), dp(4), dp(4), dp(8));
+        statusView = Styles.body(this, "准备好了，导入一张截图后就能自动识别并存档。");
+        statusView.setPadding(dp(4), dp(10), dp(4), dp(8));
         scrollChild.addView(statusView);
 
         LinearLayout listHeader = new LinearLayout(this);
         listHeader.setOrientation(LinearLayout.HORIZONTAL);
         listHeader.setGravity(Gravity.CENTER_VERTICAL);
-        listHeader.setPadding(0, dp(8), 0, dp(10));
+        listHeader.setPadding(0, dp(10), 0, dp(10));
 
         TextView listTitle = Styles.sectionTitle(this, "收藏记录");
-        TextView listHint = Styles.miniText(this, "点击卡片查看完整识别内容");
+        TextView listHint = Styles.miniText(this, "点击卡片打开详情，卡片按钮可直接编辑、删除或跳地图");
         listHint.setGravity(Gravity.END);
 
         LinearLayout.LayoutParams listTitleLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
@@ -184,17 +321,18 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
         scrollChild.addView(listHeader);
 
         FrameLayout listContainer = new FrameLayout(this);
-        listContainer.setBackground(Styles.cardBackground(0xFF0F1F35, 0xFF152842));
+        listContainer.setBackground(Styles.panelBackground());
         listContainer.setElevation(dp(8));
-        listContainer.setPadding(dp(8), dp(8), dp(8), dp(8));
+        listContainer.setPadding(dp(10), dp(10), dp(10), dp(10));
         scrollChild.addView(listContainer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(520)));
+                dp(540)));
 
         recyclerView = new RecyclerView(this);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         adapter = new RecordAdapter(this, new ArrayList<>(), this);
         recyclerView.setAdapter(adapter);
+        recyclerView.setVisibility(View.GONE);
         listContainer.addView(recyclerView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
@@ -205,6 +343,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
                 FrameLayout.LayoutParams.MATCH_PARENT));
 
         setContentView(root);
+        updateFilterButtons();
     }
 
     private View buildEmptyState() {
@@ -213,20 +352,28 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(24), dp(24), dp(24), dp(24));
 
-        TextView emoji = Styles.title(this, "✨");
+        TextView emoji = Styles.title(this, "✦");
         emoji.setTextSize(34f);
 
-        TextView headline = Styles.sectionTitle(this, "把截图收进本机记忆盒");
-        headline.setPadding(0, dp(8), 0, dp(4));
+        emptyTitleView = Styles.sectionTitle(this, "还没有任何收藏");
+        emptyTitleView.setPadding(0, dp(8), 0, dp(4));
 
-        TextView copy = Styles.body(this, "从任意 App 分享截图到这里，系统会自动 OCR 并保存店名、地址、电话、原图和时间。");
-        copy.setGravity(Gravity.CENTER_HORIZONTAL);
-        copy.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
-        copy.setPadding(dp(8), 0, dp(8), 0);
+        emptyBodyView = Styles.body(this, "从任意 App 分享截图到这里，系统会自动 OCR 并保存店名、地址、电话、原图和时间。");
+        emptyBodyView.setGravity(Gravity.CENTER_HORIZONTAL);
+        emptyBodyView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        emptyBodyView.setPadding(dp(8), 0, dp(8), 0);
+
+        emptyActionButton = Styles.primaryButton(this, "导入第一张截图");
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        btnLp.topMargin = dp(16);
+        emptyActionButton.setOnClickListener(v -> openImagePicker());
 
         box.addView(emoji);
-        box.addView(headline);
-        box.addView(copy);
+        box.addView(emptyTitleView);
+        box.addView(emptyBodyView);
+        box.addView(emptyActionButton, btnLp);
         return box;
     }
 
@@ -234,8 +381,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
         if (intent == null) {
             return;
         }
-        String action = intent.getAction();
-        if (Intent.ACTION_SEND.equals(action)) {
+        if (Intent.ACTION_SEND.equals(intent.getAction())) {
             Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
             if (uri != null) {
                 startImport(uri, "系统分享");
@@ -254,33 +400,127 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
     private void refreshRecords() {
         executor.execute(() -> {
             List<ScreenshotRecord> records = repository.loadRecords();
-            runOnUiThread(() -> applyRecords(records));
+            runOnUiThread(() -> {
+                allRecords.clear();
+                allRecords.addAll(records);
+                applyFilters();
+            });
         });
     }
 
-    private void applyRecords(List<ScreenshotRecord> records) {
-        adapter.setItems(records);
-        updateStats(records);
-        boolean empty = records.isEmpty();
-        emptyStateView.setVisibility(empty ? View.VISIBLE : View.GONE);
-        recyclerView.setVisibility(empty ? View.GONE : View.VISIBLE);
+    private void applyFilters() {
+        visibleRecords.clear();
+        for (ScreenshotRecord record : allRecords) {
+            if (matchesQuery(record) && matchesFilter(record)) {
+                visibleRecords.add(record);
+            }
+        }
+        adapter.setItems(visibleRecords);
+        updateStats();
+        updateEmptyState();
     }
 
-    private void updateStats(List<ScreenshotRecord> records) {
-        countView.setValue(records.size() + " 条记录");
-        if (records.isEmpty()) {
-            latestView.setValue("暂无记录");
-            statusView.setText("准备好了，分享一张截图进来就会自动识别。");
-            return;
+    private boolean matchesQuery(ScreenshotRecord record) {
+        if (TextUtils.isEmpty(currentQuery)) {
+            return true;
         }
-        ScreenshotRecord first = records.get(0);
-        latestView.setValue(shorten(first.title, 12));
-        statusView.setText("最新记录：" + first.title + " · " + formatDate(first.createdAt));
+        String query = currentQuery.trim().toLowerCase(Locale.getDefault());
+        return containsIgnoreCase(record.title, query)
+                || containsIgnoreCase(record.address, query)
+                || containsIgnoreCase(record.phone, query)
+                || containsIgnoreCase(record.notes, query)
+                || containsIgnoreCase(record.sourceLabel, query)
+                || containsIgnoreCase(record.rawText, query);
+    }
+
+    private boolean matchesFilter(ScreenshotRecord record) {
+        switch (currentFilter) {
+            case FILTER_ADDRESS:
+                return !isBlank(record.address);
+            case FILTER_PHONE:
+                return !isBlank(record.phone);
+            case FILTER_RECENT:
+                return record.createdAt >= System.currentTimeMillis() - 7L * 24L * 60L * 60L * 1000L;
+            case FILTER_NOTES:
+                return !isBlank(record.notes);
+            case FILTER_ALL:
+            default:
+                return true;
+        }
+    }
+
+    private void setFilter(int filter) {
+        currentFilter = filter;
+        updateFilterButtons();
+        applyFilters();
+    }
+
+    private void updateFilterButtons() {
+        allFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_ALL));
+        addressFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_ADDRESS));
+        phoneFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_PHONE));
+        recentFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_RECENT));
+        notesFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_NOTES));
+    }
+
+    private void updateStats() {
+        countView.setValue(allRecords.size() + " 条记录");
+        if (visibleRecords.isEmpty()) {
+            latestView.setValue("无匹配结果");
+        } else {
+            latestView.setValue(shorten(visibleRecords.get(0).title, 12));
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("当前显示 ").append(visibleRecords.size()).append("/").append(allRecords.size()).append(" 条");
+        builder.append(" · 筛选：").append(filterLabel(currentFilter));
+        if (!TextUtils.isEmpty(currentQuery)) {
+            builder.append(" · 关键词：").append(currentQuery.trim());
+        }
+        statusView.setText(builder.toString());
+    }
+
+    private void updateEmptyState() {
+        boolean noData = allRecords.isEmpty();
+        boolean noMatch = !noData && visibleRecords.isEmpty();
+        emptyStateView.setVisibility((noData || noMatch) ? View.VISIBLE : View.GONE);
+        recyclerView.setVisibility((noData || noMatch) ? View.GONE : View.VISIBLE);
+
+        if (noData) {
+            emptyTitleView.setText("还没有任何收藏");
+            emptyBodyView.setText("从任意 App 分享截图到这里，系统会自动 OCR 并保存店名、地址、电话、原图和时间。");
+            emptyActionButton.setText("导入第一张截图");
+            emptyActionButton.setOnClickListener(v -> openImagePicker());
+        } else if (noMatch) {
+            emptyTitleView.setText("没有找到匹配结果");
+            emptyBodyView.setText("换个关键词，或者切回“全部”查看当前收藏。");
+            emptyActionButton.setText("清空搜索");
+            emptyActionButton.setOnClickListener(v -> {
+                searchField.setText("");
+                setFilter(FILTER_ALL);
+            });
+        }
+    }
+
+    private String filterLabel(int filter) {
+        switch (filter) {
+            case FILTER_ADDRESS:
+                return "有地址";
+            case FILTER_PHONE:
+                return "有电话";
+            case FILTER_RECENT:
+                return "近 7 天";
+            case FILTER_NOTES:
+                return "有备注";
+            case FILTER_ALL:
+            default:
+                return "全部";
+        }
     }
 
     private void startImport(Uri uri, String sourceLabel) {
         if (importing) {
-            Toast.makeText(this, "正在处理上一张截图", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "正在处理上一张截图，请稍等", Toast.LENGTH_SHORT).show();
             return;
         }
         importing = true;
@@ -303,12 +543,214 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordClic
         });
     }
 
-    private String formatDate(long time) {
-        return new SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(new Date(time));
+    private void showRecordDialog(ScreenshotRecord record) {
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCanceledOnTouchOutside(true);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16), dp(16), dp(16), dp(16));
+        panel.setBackground(Styles.panelBackground());
+        scroll.addView(panel, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView title = Styles.sectionTitle(this, "编辑详情");
+        TextView subtitle = Styles.body(this, "你可以修改识别结果、补充备注、删除记录或直接跳转到高德地图。");
+        subtitle.setPadding(0, dp(6), 0, dp(12));
+        panel.addView(title);
+        panel.addView(subtitle);
+
+        ImageView preview = new ImageView(this);
+        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        preview.setBackground(Styles.previewBackground());
+        int previewHeight = dp(210);
+        preview.setImageBitmap(BitmapFactory.decodeFile(record.thumbnailPath));
+        LinearLayout.LayoutParams previewLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                previewHeight);
+        previewLp.bottomMargin = dp(14);
+        panel.addView(preview, previewLp);
+
+        EditText titleField = Styles.inputField(this, "标题", false);
+        titleField.setText(record.title);
+        panel.addView(wrapField("标题", titleField));
+
+        EditText addressField = Styles.inputField(this, "地址", false);
+        addressField.setText(record.address);
+        panel.addView(wrapField("地址", addressField));
+
+        EditText phoneField = Styles.inputField(this, "电话", false);
+        phoneField.setInputType(InputType.TYPE_CLASS_PHONE);
+        phoneField.setText(record.phone);
+        panel.addView(wrapField("电话", phoneField));
+
+        EditText sourceField = Styles.inputField(this, "来源", false);
+        sourceField.setText(record.sourceLabel);
+        panel.addView(wrapField("来源", sourceField));
+
+        EditText notesField = Styles.inputField(this, "备注 / 补充信息", true);
+        notesField.setText(record.notes);
+        panel.addView(wrapField("备注", notesField));
+
+        EditText rawField = Styles.inputField(this, "OCR 原始识别文本", true);
+        rawField.setMinLines(5);
+        rawField.setText(record.rawText);
+        panel.addView(wrapField("识别文本", rawField));
+
+        TextView createdAt = Styles.miniText(this, "创建时间：" + formatDate(record.createdAt));
+        createdAt.setPadding(0, dp(10), 0, dp(10));
+        panel.addView(createdAt);
+
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionRow.setPadding(0, dp(6), 0, 0);
+
+        Button mapButton = Styles.secondaryButton(this, "打开高德");
+        mapButton.setEnabled(!isBlank(record.address));
+        mapButton.setAlpha(isBlank(record.address) ? 0.45f : 1f);
+        mapButton.setOnClickListener(v -> openMap(addressField.getText().toString().trim()));
+
+        Button saveButton = Styles.primaryButton(this, "保存修改");
+        saveButton.setOnClickListener(v -> saveEditedRecord(dialog, record, titleField, addressField, phoneField, sourceField, notesField, rawField));
+
+        Button deleteButton = Styles.dangerButton(this, "删除记录");
+        deleteButton.setOnClickListener(v -> {
+            dialog.dismiss();
+            confirmDelete(record);
+        });
+
+        LinearLayout.LayoutParams actionLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        actionLp.rightMargin = dp(8);
+        actionRow.addView(mapButton, actionLp);
+
+        LinearLayout.LayoutParams actionLp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        actionLp2.rightMargin = dp(8);
+        actionRow.addView(saveButton, actionLp2);
+
+        LinearLayout.LayoutParams actionLp3 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        actionRow.addView(deleteButton, actionLp3);
+        panel.addView(actionRow);
+
+        dialog.setContentView(scroll);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        }
+        dialog.show();
     }
 
-    private String safe(String value) {
-        return value == null || value.trim().isEmpty() ? "未识别" : value.trim();
+    private View wrapField(String label, EditText field) {
+        LinearLayout wrapper = new LinearLayout(this);
+        wrapper.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(12);
+
+        TextView labelView = Styles.miniText(this, label);
+        labelView.setPadding(dp(4), 0, dp(4), dp(6));
+        wrapper.addView(labelView);
+        wrapper.addView(field);
+        wrapper.setLayoutParams(lp);
+        return wrapper;
+    }
+
+    private void saveEditedRecord(Dialog dialog,
+                                  ScreenshotRecord original,
+                                  EditText titleField,
+                                  EditText addressField,
+                                  EditText phoneField,
+                                  EditText sourceField,
+                                  EditText notesField,
+                                  EditText rawField) {
+        ScreenshotRecord updated = new ScreenshotRecord(
+                original.id,
+                trimToEmpty(titleField.getText().toString(), "未命名截图"),
+                trimToEmpty(addressField.getText().toString(), ""),
+                trimToEmpty(phoneField.getText().toString(), ""),
+                trimToEmpty(rawField.getText().toString(), ""),
+                trimToEmpty(notesField.getText().toString(), ""),
+                original.imagePath,
+                original.thumbnailPath,
+                trimToEmpty(sourceField.getText().toString(), "本地"),
+                original.createdAt);
+
+        executor.execute(() -> {
+            repository.saveRecord(updated);
+            runOnUiThread(() -> {
+                dialog.dismiss();
+                Toast.makeText(this, "修改已保存", Toast.LENGTH_SHORT).show();
+                refreshRecords();
+            });
+        });
+    }
+
+    private void confirmDelete(ScreenshotRecord record) {
+        new AlertDialog.Builder(this)
+                .setTitle("删除记录")
+                .setMessage("确定删除「" + record.title + "」吗？原图和缩略图会保留在本地文件夹里，但记录会从列表移除。")
+                .setPositiveButton("删除", (dialog, which) -> executor.execute(() -> {
+                    repository.deleteRecord(record.id);
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "已删除", Toast.LENGTH_SHORT).show();
+                        refreshRecords();
+                    });
+                }))
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void openMap(String address) {
+        if (isBlank(address)) {
+            Toast.makeText(this, "没有可用地址", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String keyword = Uri.encode(address.trim());
+        Intent amapIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(
+                "androidamap://search?sourceApplication=SnapNest&keyword=" + keyword + "&dev=0"));
+        amapIntent.setPackage("com.autonavi.minimap");
+
+        if (amapIntent.resolveActivity(getPackageManager()) != null) {
+            startActivity(amapIntent);
+            return;
+        }
+
+        Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse("https://uri.amap.com/search?keyword=" + keyword));
+        if (fallback.resolveActivity(getPackageManager()) != null) {
+            startActivity(fallback);
+        } else {
+            Toast.makeText(this, "未安装高德地图", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private boolean containsIgnoreCase(String value, String query) {
+        if (TextUtils.isEmpty(value)) {
+            return false;
+        }
+        return value.toLowerCase(Locale.getDefault()).contains(query);
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private String trimToEmpty(String value, String fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        String clean = value.trim();
+        return clean.isEmpty() ? fallback : clean;
+    }
+
+    private String formatDate(long time) {
+        return new SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(new Date(time));
     }
 
     private String shorten(String value, int max) {

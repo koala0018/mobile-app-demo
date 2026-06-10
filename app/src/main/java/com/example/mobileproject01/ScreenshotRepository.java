@@ -40,6 +40,14 @@ final class ScreenshotRepository {
         return store.loadAll();
     }
 
+    void saveRecord(ScreenshotRecord record) {
+        store.update(record);
+    }
+
+    void deleteRecord(long id) {
+        store.delete(id);
+    }
+
     ScreenshotRecord importFromUri(Uri uri, String sourceLabel) throws Exception {
         String rawText = recognizeText(uri);
         ParsedScreenshot parsed = ScreenshotParser.parse(rawText);
@@ -64,6 +72,7 @@ final class ScreenshotRepository {
                 parsed.address,
                 parsed.phone,
                 parsed.rawText,
+                "",
                 originalFile.getAbsolutePath(),
                 thumbFile.getAbsolutePath(),
                 sourceLabel,
@@ -76,6 +85,7 @@ final class ScreenshotRepository {
                 record.address,
                 record.phone,
                 record.rawText,
+                record.notes,
                 record.imagePath,
                 record.thumbnailPath,
                 record.sourceLabel,

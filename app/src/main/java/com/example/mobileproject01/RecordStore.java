@@ -11,7 +11,7 @@ import java.util.List;
 
 final class RecordStore extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "snapnest.db";
-    private static final int DATABASE_VERSION = 1;
+    private static final int DATABASE_VERSION = 2;
     private static final String TABLE = "records";
 
     RecordStore(Context context) {
@@ -26,6 +26,7 @@ final class RecordStore extends SQLiteOpenHelper {
                 "address TEXT," +
                 "phone TEXT," +
                 "raw_text TEXT," +
+                "notes TEXT DEFAULT ''," +
                 "image_path TEXT NOT NULL," +
                 "thumbnail_path TEXT NOT NULL," +
                 "source_label TEXT," +
@@ -34,8 +35,9 @@ final class RecordStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE);
-        onCreate(db);
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE " + TABLE + " ADD COLUMN notes TEXT DEFAULT ''");
+        }
     }
 
     long insert(ScreenshotRecord record) {
@@ -45,11 +47,29 @@ final class RecordStore extends SQLiteOpenHelper {
         values.put("address", record.address);
         values.put("phone", record.phone);
         values.put("raw_text", record.rawText);
+        values.put("notes", record.notes);
         values.put("image_path", record.imagePath);
         values.put("thumbnail_path", record.thumbnailPath);
         values.put("source_label", record.sourceLabel);
         values.put("created_at", record.createdAt);
         return db.insert(TABLE, null, values);
+    }
+
+    int update(ScreenshotRecord record) {
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("title", record.title);
+        values.put("address", record.address);
+        values.put("phone", record.phone);
+        values.put("raw_text", record.rawText);
+        values.put("notes", record.notes);
+        values.put("source_label", record.sourceLabel);
+        return db.update(TABLE, values, "id=?", new String[]{String.valueOf(record.id)});
+    }
+
+    int delete(long id) {
+        SQLiteDatabase db = getWritableDatabase();
+        return db.delete(TABLE, "id=?", new String[]{String.valueOf(id)});
     }
 
     List<ScreenshotRecord> loadAll() {
@@ -73,6 +93,7 @@ final class RecordStore extends SQLiteOpenHelper {
                         cursor.getString(addressIndex),
                         cursor.getString(phoneIndex),
                         cursor.getString(rawIndex),
+                        cursor.getString(cursor.getColumnIndexOrThrow("notes")),
                         cursor.getString(imageIndex),
                         cursor.getString(thumbIndex),
                         cursor.getString(sourceIndex),
