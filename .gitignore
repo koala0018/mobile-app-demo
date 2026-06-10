@@ -1,10 +1,26 @@
-.gradle/
+# IDE
 .idea/
-build/
-captures/
-local.properties
 *.iml
+.vscode/
+
+# Gradle
+.gradle/
+**/build/
 *.apk
+*.aab
 *.keystore
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local helper/runtime files used by this workspace
 .gradle-wrapper/
+android-sdk/
+tools/
+tmp/
 phone-demo/
+
+# OS junk
+.DS_Store
+Thumbs.db

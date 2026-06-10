@@ -12,6 +12,8 @@ if (-not $DistUrl) {
     throw "Unable to read distributionUrl from $PropsFile"
 }
 
+$DistUrl = $DistUrl -replace '\\', ''
+
 if ($DistUrl -notmatch 'gradle-([0-9.]+)-bin\.zip') {
     throw "Unable to parse Gradle version from $DistUrl"
 }
