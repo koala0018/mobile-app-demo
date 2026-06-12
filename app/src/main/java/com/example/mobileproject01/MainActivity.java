@@ -137,7 +137,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         KineticStripView kineticStrip = new KineticStripView(this);
         LinearLayout.LayoutParams stripLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(38));
+                dp(54));
         stripLp.bottomMargin = dp(10);
         root.addView(kineticStrip, stripLp);
 
@@ -613,13 +613,14 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
             return;
         }
         String keyword = Uri.encode(address.trim());
-        Intent amap = new Intent(Intent.ACTION_VIEW, Uri.parse("androidamap://search?sourceApplication=SnapNest&keyword=" + keyword + "&dev=0"));
+        String source = Uri.encode(getString(R.string.app_name));
+        Intent amap = new Intent(Intent.ACTION_VIEW, Uri.parse("androidamap://search?sourceApplication=" + source + "&keyword=" + keyword + "&dev=0"));
         amap.setPackage("com.autonavi.minimap");
         if (amap.resolveActivity(getPackageManager()) != null) {
             startActivity(amap);
             return;
         }
-        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://uri.amap.com/search?keyword=" + keyword)));
+        Toast.makeText(this, "未检测到高德地图 App，无法直接搜索", Toast.LENGTH_LONG).show();
     }
 
     private String getApiKey() {
