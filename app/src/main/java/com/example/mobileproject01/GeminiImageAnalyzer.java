@@ -19,19 +19,17 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 final class GeminiImageAnalyzer {
-    private static final String MODEL = "gemini-2.5-flash-lite";
+    private static final String MODEL = "gemini-2.0-flash-lite";
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent";
 
     ParsedScreenshot analyze(File imageFile, String apiKey) throws IOException, JSONException {
         if (TextUtils.isEmpty(apiKey)) {
-            throw new IOException("Missing Gemini API key");
+            throw new IOException("请先填写 Google Gemini API Key");
         }
 
-        byte[] imageBytes = toJpegBytes(imageFile);
-        String encoded = Base64.encodeToString(imageBytes, Base64.NO_WRAP);
-        JSONObject payload = buildPayload(encoded);
-        String response = postJson(apiKey, payload);
+        String encoded = Base64.encodeToString(toJpegBytes(imageFile), Base64.NO_WRAP);
+        String response = postJson(apiKey, buildPayload(encoded));
         return parseResponse(response);
     }
 
@@ -45,17 +43,20 @@ final class GeminiImageAnalyzer {
 
         JSONObject textPart = new JSONObject();
         textPart.put("text",
-                "你是一个细心的信息提取助手。请只根据图片内容提取中文截图里的店名、地址、电话和可补充备注，" +
-                        "并输出严格 JSON，不要输出多余说明。JSON 字段必须包含 title、address、phone、notes、rawText。 " +
-                        "title 写最像店名或地点名称的短标题；address 写完整地址；phone 写联系电话；notes 写与门店相关的补充信息；" +
-                        "rawText 写你能看到的关键信息摘要。若不存在则留空字符串。");
+                "你是一个中文截图信息提取助手。请只根据图片内容提取店名、地点名、地址、电话和补充说明。"
+                        + "只输出严格 JSON，不要 Markdown，不要解释。"
+                        + "JSON 字段必须是 title、address、phone、notes、rawText。"
+                        + "title 写最像店名或地点名的短标题；address 写完整地址；phone 写联系电话；"
+                        + "notes 写营业时间、楼层、门店说明等补充信息；rawText 写你从图片中看到的关键文字摘要。"
+                        + "如果某字段不存在，请返回空字符串。");
 
         JSONObject content = new JSONObject();
         content.put("role", "user");
         content.put("parts", new org.json.JSONArray().put(textPart).put(imagePart));
 
         JSONObject generationConfig = new JSONObject();
-        generationConfig.put("temperature", 0.2);
+        generationConfig.put("temperature", 0.1);
+        generationConfig.put("candidateCount", 1);
         generationConfig.put("responseMimeType", "application/json");
 
         JSONObject root = new JSONObject();
@@ -70,12 +71,17 @@ final class GeminiImageAnalyzer {
             URL url = new URL(ENDPOINT + "?key=" + URLEncoder.encode(apiKey, StandardCharsets.UTF_8.name()));
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
+            connection.setDoInput(true);
             connection.setDoOutput(true);
+            connection.setUseCaches(false);
             connection.setConnectTimeout(15000);
-            connection.setReadTimeout(30000);
+            connection.setReadTimeout(45000);
+            connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            connection.setRequestProperty("Connection", "close");
 
             byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(bytes);
             }
@@ -97,20 +103,17 @@ final class GeminiImageAnalyzer {
     private ParsedScreenshot parseResponse(String body) throws JSONException {
         JSONObject root = new JSONObject(body);
         String text = "";
-        if (root.has("candidates")) {
-            org.json.JSONArray candidates = root.getJSONArray("candidates");
-            if (candidates.length() > 0) {
-                JSONObject candidate = candidates.getJSONObject(0);
-                if (candidate.has("content")) {
-                    JSONObject content = candidate.getJSONObject("content");
-                    org.json.JSONArray parts = content.optJSONArray("parts");
-                    if (parts != null && parts.length() > 0) {
-                        text = parts.getJSONObject(0).optString("text", "");
-                    }
+        org.json.JSONArray candidates = root.optJSONArray("candidates");
+        if (candidates != null && candidates.length() > 0) {
+            JSONObject content = candidates.getJSONObject(0).optJSONObject("content");
+            if (content != null) {
+                org.json.JSONArray parts = content.optJSONArray("parts");
+                if (parts != null && parts.length() > 0) {
+                    text = parts.getJSONObject(0).optString("text", "");
                 }
             }
         }
-        if (TextUtils.isEmpty(text) && root.has("text")) {
+        if (TextUtils.isEmpty(text)) {
             text = root.optString("text", "");
         }
 
@@ -152,7 +155,7 @@ final class GeminiImageAnalyzer {
         }
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output);
             return output.toByteArray();
         } finally {
             bitmap.recycle();

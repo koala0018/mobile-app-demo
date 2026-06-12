@@ -12,4 +12,5 @@
     <color name="accent_c">#A78BFA</color>
     <color name="success">#68E6A8</color>
     <color name="danger">#FF7A90</color>
+    <color name="paper">#FFF8ED</color>
 </resources>

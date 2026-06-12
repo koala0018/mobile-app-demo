@@ -1,30 +1,17 @@
 package com.example.mobileproject01;
 
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
-import android.provider.OpenableColumns;
 import android.text.TextUtils;
 
-import com.google.android.gms.tasks.Tasks;
-import com.google.mlkit.vision.common.InputImage;
-import com.google.mlkit.vision.text.Text;
-import com.google.mlkit.vision.text.TextRecognition;
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
-
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -55,22 +42,19 @@ final class ScreenshotRepository {
 
     ScreenshotRecord importFromUri(Uri uri, String sourceLabel) throws Exception {
         long createdAt = System.currentTimeMillis();
-
         File recordsDir = new File(context.getFilesDir(), "screenshots");
         if (!recordsDir.exists() && !recordsDir.mkdirs()) {
             throw new IOException("无法创建截图目录");
         }
 
         String baseName = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(createdAt);
-        String extension = guessExtension(uri);
-        File originalFile = new File(recordsDir, "shot_" + baseName + extension);
+        File originalFile = new File(recordsDir, "shot_" + baseName + guessExtension(uri));
         copyUriToFile(uri, originalFile);
 
         File thumbFile = new File(recordsDir, "thumb_" + baseName + ".jpg");
         createThumbnail(originalFile, thumbFile);
 
-        ParsedScreenshot parsed = analyzeScreenshot(originalFile, uri);
-
+        ParsedScreenshot parsed = analyzeScreenshot(originalFile);
         ScreenshotRecord record = new ScreenshotRecord(
                 0L,
                 parsed.title,
@@ -84,66 +68,20 @@ final class ScreenshotRepository {
                 createdAt);
 
         long id = store.insert(record);
-        return new ScreenshotRecord(
-                id,
-                record.title,
-                record.address,
-                record.phone,
-                record.rawText,
-                record.notes,
-                record.imagePath,
-                record.thumbnailPath,
-                record.sourceLabel,
-                record.createdAt);
+        return record.withId(id);
     }
 
-    private ParsedScreenshot analyzeScreenshot(File originalFile, Uri uri) throws Exception {
+    private ParsedScreenshot analyzeScreenshot(File originalFile) throws Exception {
         String apiKey = getGeminiApiKey();
-        if (!TextUtils.isEmpty(apiKey)) {
-            try {
-                return geminiAnalyzer.analyze(originalFile, apiKey);
-            } catch (Exception ignored) {
-                // Fall back to local OCR when remote analysis fails.
-            }
+        if (TextUtils.isEmpty(apiKey)) {
+            throw new IOException("请先填写 Google Gemini API Key");
         }
-        String rawText = recognizeText(uri);
-        return ScreenshotParser.parse(rawText);
+        return geminiAnalyzer.analyze(originalFile, apiKey);
     }
 
     private String getGeminiApiKey() {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         return prefs.getString(KEY_GEMINI_API_KEY, "");
-    }
-
-    private String recognizeText(Uri uri) throws Exception {
-        InputImage image = InputImage.fromFilePath(context, uri);
-        StringBuilder builder = new StringBuilder();
-        appendRecognizedText(builder, image, new ChineseTextRecognizerOptions.Builder().build());
-        appendRecognizedText(builder, image, TextRecognizerOptions.DEFAULT_OPTIONS);
-        String text = builder.toString().trim();
-        if (TextUtils.isEmpty(text)) {
-            return "未识别到文本";
-        }
-        return text;
-    }
-
-    private void appendRecognizedText(StringBuilder builder, InputImage image, Object options) throws Exception {
-        Text text;
-        if (options instanceof ChineseTextRecognizerOptions) {
-            text = Tasks.await(TextRecognition.getClient((ChineseTextRecognizerOptions) options).process(image));
-        } else {
-            text = Tasks.await(TextRecognition.getClient((TextRecognizerOptions) options).process(image));
-        }
-        if (text == null) {
-            return;
-        }
-        String recognized = text.getText();
-        if (!TextUtils.isEmpty(recognized)) {
-            if (builder.length() > 0) {
-                builder.append('\n');
-            }
-            builder.append(recognized);
-        }
     }
 
     private void copyUriToFile(Uri uri, File outputFile) throws IOException {
@@ -186,7 +124,6 @@ final class ScreenshotRepository {
         int height = options.outHeight;
         int width = options.outWidth;
         int inSampleSize = 1;
-
         if (height > reqHeight || width > reqWidth) {
             int halfHeight = height / 2;
             int halfWidth = width / 2;

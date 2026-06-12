@@ -2,7 +2,6 @@ package com.example.mobileproject01;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
@@ -16,7 +15,20 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.google.android.material.button.MaterialButton;
+
 public final class Styles {
+    static final int INK = 0xFF111111;
+    static final int PAPER = 0xFFFFF8ED;
+    static final int PANEL = 0xFFFFFFFF;
+    static final int MUTED = 0xFF5F5F66;
+    static final int LINE = 0xFF191919;
+    static final int PINK = 0xFFFF5DA8;
+    static final int GREEN = 0xFFB9FF3D;
+    static final int BLUE = 0xFF5E7BFF;
+    static final int YELLOW = 0xFFFFD84D;
+    static final int RED = 0xFFFF624D;
+
     private Styles() {
     }
 
@@ -24,63 +36,65 @@ public final class Styles {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 new int[]{startColor, endColor});
-        drawable.setCornerRadius(32f);
-        drawable.setStroke(1, 0x22FFFFFF);
+        drawable.setCornerRadius(18f);
+        drawable.setStroke(dpRadius(1), LINE);
         return drawable;
     }
 
     static GradientDrawable panelBackground() {
-        return cardBackground(0xFF101D30, 0xFF172843);
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(PANEL);
+        drawable.setCornerRadius(18f);
+        drawable.setStroke(dpRadius(1), LINE);
+        return drawable;
     }
 
     static GradientDrawable previewBackground() {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[]{0xFF243A5B, 0xFF13233B});
-        drawable.setCornerRadius(24f);
-        drawable.setStroke(1, 0x18FFFFFF);
+                new int[]{0xFFF4F4F4, 0xFFE8ECFF});
+        drawable.setCornerRadius(14f);
+        drawable.setStroke(dpRadius(1), LINE);
         return drawable;
     }
 
     static GradientDrawable inputBackground() {
         GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(0xFF0E1828);
-        drawable.setCornerRadius(24f);
-        drawable.setStroke(1, 0x20FFFFFF);
+        drawable.setColor(0xFFFFFFFF);
+        drawable.setCornerRadius(14f);
+        drawable.setStroke(dpRadius(1), LINE);
         return drawable;
     }
 
     static GradientDrawable chipBackground(boolean selected) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setCornerRadius(999f);
-        drawable.setStroke(1, selected ? 0x66A8F5FF : 0x2EFFFFFF);
-        drawable.setColor(selected ? 0xFF203A59 : 0x1E20324E);
+        drawable.setStroke(dpRadius(1), LINE);
+        drawable.setColor(selected ? GREEN : 0xFFFFFFFF);
         return drawable;
     }
 
     static TextView title(Context context, String text) {
-        TextView view = baseText(context, text, 30f, 0xFFF4F8FF, true);
-        view.setLetterSpacing(0.02f);
+        TextView view = baseText(context, text, 28f, INK, true);
+        view.setLetterSpacing(0f);
         return view;
     }
 
     static TextView sectionTitle(Context context, String text) {
-        return baseText(context, text, 18f, 0xFFF4F8FF, true);
+        return baseText(context, text, 18f, INK, true);
     }
 
     static TextView body(Context context, String text) {
-        return baseText(context, text, 14f, 0xFFA7B7D1, false);
+        return baseText(context, text, 14f, MUTED, false);
     }
 
     static TextView miniText(Context context, String text) {
-        TextView view = baseText(context, text, 12f, 0xFF90A7C7, false);
-        view.setAlpha(0.95f);
-        return view;
+        return baseText(context, text, 12f, MUTED, false);
     }
 
     static TextView badge(Context context, String text) {
-        TextView view = baseText(context, text, 11.5f, 0xFFF4F8FF, true);
-        view.setPadding(dp(context, 10), dp(context, 6), dp(context, 10), dp(context, 6));
+        TextView view = baseText(context, text, 11f, INK, true);
+        view.setPadding(dp(context, 10), dp(context, 5), dp(context, 10), dp(context, 5));
         view.setBackground(chipBackground(false));
         return view;
     }
@@ -90,42 +104,49 @@ public final class Styles {
     }
 
     static Button primaryButton(Context context, String text) {
-        Button button = baseButton(context, text, 0xFF07111F);
-        button.setBackground(cardBackground(0xFF7EE7FF, 0xFF97F4FF));
+        Button button = baseButton(context, text, INK);
+        button.setBackground(cardBackground(GREEN, GREEN));
         return button;
     }
 
     static Button secondaryButton(Context context, String text) {
-        Button button = baseButton(context, text, 0xFFF4F8FF);
-        button.setBackground(cardBackground(0x1F203A60, 0x1B294561));
+        Button button = baseButton(context, text, INK);
+        button.setBackground(cardBackground(0xFFFFFFFF, 0xFFFFFFFF));
+        return button;
+    }
+
+    static Button accentButton(Context context, String text, int color) {
+        Button button = baseButton(context, text, INK);
+        button.setBackground(cardBackground(color, color));
         return button;
     }
 
     static Button chipButton(Context context, String text) {
-        Button button = baseButton(context, text, 0xFFF4F8FF);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        button.setPadding(dp(context, 14), dp(context, 10), dp(context, 14), dp(context, 10));
+        Button button = baseButton(context, text, INK);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        button.setMinHeight(dp(context, 38));
+        button.setPadding(dp(context, 12), dp(context, 7), dp(context, 12), dp(context, 7));
         button.setBackground(chipBackground(false));
         return button;
     }
 
     static Button dangerButton(Context context, String text) {
-        Button button = baseButton(context, text, 0xFFFFECF0);
-        button.setBackground(cardBackground(0xFF60263A, 0xFF7B3149));
+        Button button = baseButton(context, text, INK);
+        button.setBackground(cardBackground(RED, RED));
         return button;
     }
 
     static EditText inputField(Context context, String hint, boolean multiLine) {
         EditText editText = new EditText(context);
         editText.setHint(hint);
-        editText.setTextColor(0xFFF4F8FF);
-        editText.setHintTextColor(0xFF8095B6);
+        editText.setTextColor(INK);
+        editText.setHintTextColor(0xFF8A8A91);
         editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         editText.setBackground(inputBackground());
-        editText.setPadding(dp(context, 14), dp(context, 11), dp(context, 14), dp(context, 11));
+        editText.setPadding(dp(context, 12), dp(context, 9), dp(context, 12), dp(context, 9));
         editText.setSingleLine(!multiLine);
         editText.setTextIsSelectable(true);
-        editText.setLineSpacing(0f, 1.1f);
+        editText.setLineSpacing(0f, 1.08f);
         if (multiLine) {
             editText.setMinLines(2);
             editText.setGravity(Gravity.TOP | Gravity.START);
@@ -134,28 +155,28 @@ public final class Styles {
     }
 
     static TextView itemTitle(Context context, String text) {
-        TextView view = baseText(context, text, 18f, 0xFFF4F8FF, true);
+        TextView view = baseText(context, text, 16f, INK, true);
         view.setMaxLines(2);
         view.setEllipsize(android.text.TextUtils.TruncateAt.END);
         return view;
     }
 
     static TextView itemBody(Context context, String text) {
-        TextView view = baseText(context, text, 13f, 0xFFBDD0EE, false);
-        view.setLineSpacing(0f, 1.08f);
-        return view;
+        return baseText(context, text, 13f, MUTED, false);
     }
 
     static TextView itemSnippet(Context context, String text) {
-        TextView view = baseText(context, text, 12f, 0xFF90A7C7, false);
-        view.setLineSpacing(0f, 1.05f);
-        return view;
+        return baseText(context, text, 12f, MUTED, false);
     }
 
     static void applyPressFeedback(View view) {
         view.setOnTouchListener((v, event) -> {
-            float scale = event.getActionMasked() == MotionEvent.ACTION_DOWN ? 0.985f : 1f;
-            v.animate().scaleX(scale).scaleY(scale).setDuration(120).start();
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                v.animate().translationY(dp(v.getContext(), 2)).setDuration(80).start();
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                v.animate().translationY(0).setDuration(120).start();
+            }
             return false;
         });
     }
@@ -165,7 +186,7 @@ public final class Styles {
             view.setClickable(true);
             view.setFocusable(true);
             view.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(0x22FFFFFF),
+                    ColorStateList.valueOf(0x1A111111),
                     view.getBackground(),
                     null));
         }
@@ -174,7 +195,7 @@ public final class Styles {
 
     static LinearLayout divider(Context context) {
         LinearLayout divider = new LinearLayout(context);
-        divider.setBackgroundColor(0x14FFFFFF);
+        divider.setBackgroundColor(LINE);
         divider.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(context, 1)));
@@ -183,6 +204,10 @@ public final class Styles {
 
     static int dp(Context context, int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
+    }
+
+    private static int dpRadius(int value) {
+        return value;
     }
 
     private static TextView baseText(Context context, String text, float sizeSp, int color, boolean bold) {
@@ -198,12 +223,13 @@ public final class Styles {
     }
 
     private static Button baseButton(Context context, String text, int textColor) {
-        Button button = new Button(context);
+        Button button = new MaterialButton(context);
         button.setText(text);
         button.setAllCaps(false);
         button.setTextColor(textColor);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        button.setPadding(dp(context, 16), dp(context, 13), dp(context, 16), dp(context, 13));
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        button.setMinHeight(dp(context, 42));
+        button.setPadding(dp(context, 14), dp(context, 9), dp(context, 14), dp(context, 9));
         button.setTransformationMethod(null);
         button.setGravity(Gravity.CENTER);
         applyPressFeedback(button);
