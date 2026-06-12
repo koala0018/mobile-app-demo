@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -23,6 +24,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -66,6 +68,9 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
     private Button phoneFilterButton;
     private Button recentFilterButton;
     private Button notesFilterButton;
+    private Button refreshButton;
+    private Button modelButton;
+    private ProgressBar refreshProgress;
     private String currentQuery = "";
     private int currentFilter = FILTER_ALL;
     private boolean importing;
@@ -175,7 +180,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         TextView title = Styles.title(this, getString(R.string.app_name));
         title.setPadding(0, dp(12), 0, 0);
 
-        TextView subtitle = Styles.body(this, "把看到的店面、地址、电话和截图本身都收进来，之后还能搜索、编辑、删除并一键打开高德地图。");
+        TextView subtitle = Styles.body(this, "把看到的店面、地址、电话和截图本身都收进来，之后还能搜索、编辑、删除并一键打开高德地图。识别优先走 Gemini 图像理解。");
         subtitle.setPadding(0, dp(10), 0, dp(16));
 
         LinearLayout statsRow = new LinearLayout(this);
@@ -199,7 +204,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
 
         LinearLayout searchCard = new LinearLayout(this);
         searchCard.setOrientation(LinearLayout.VERTICAL);
-        searchCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        searchCard.setPadding(dp(12), dp(12), dp(12), dp(12));
         searchCard.setBackground(Styles.panelBackground());
         searchCard.setElevation(dp(6));
         LinearLayout.LayoutParams searchCardLp = new LinearLayout.LayoutParams(
@@ -209,11 +214,12 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         scrollChild.addView(searchCard, searchCardLp);
 
         TextView searchLabel = Styles.sectionTitle(this, "搜索与筛选");
+        searchLabel.setTextSize(16f);
         searchCard.addView(searchLabel);
 
         LinearLayout searchRow = new LinearLayout(this);
         searchRow.setOrientation(LinearLayout.HORIZONTAL);
-        searchRow.setPadding(0, dp(10), 0, 0);
+        searchRow.setPadding(0, dp(8), 0, 0);
 
         searchField = Styles.inputField(this, "搜索标题、地址、电话、备注", false);
         searchField.setInputType(InputType.TYPE_CLASS_TEXT);
@@ -234,9 +240,10 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         });
 
         Button clearButton = Styles.secondaryButton(this, "清空");
+        clearButton.setTextSize(12f);
         clearButton.setOnClickListener(v -> searchField.setText(""));
 
-        LinearLayout.LayoutParams searchFieldLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        LinearLayout.LayoutParams searchFieldLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.72f);
         searchFieldLp.rightMargin = dp(8);
         searchRow.addView(searchField, searchFieldLp);
         searchRow.addView(clearButton, new LinearLayout.LayoutParams(
@@ -285,23 +292,50 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, dp(14), 0, 0);
+        actions.setPadding(0, dp(10), 0, 0);
 
         Button importButton = Styles.primaryButton(this, "导入截图");
+        importButton.setTextSize(12.5f);
         importButton.setOnClickListener(v -> openImagePicker());
 
-        Button refreshButton = Styles.secondaryButton(this, "刷新");
+        refreshButton = Styles.secondaryButton(this, "刷新");
+        refreshButton.setTextSize(12.5f);
         refreshButton.setOnClickListener(v -> refreshRecords());
+
+        modelButton = Styles.secondaryButton(this, "模型");
+        modelButton.setTextSize(12.5f);
+        modelButton.setOnClickListener(v -> showModelSettings());
 
         LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
         buttonLp.rightMargin = dp(8);
         actions.addView(importButton, buttonLp);
         LinearLayout.LayoutParams buttonLp2 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        buttonLp2.rightMargin = dp(8);
         actions.addView(refreshButton, buttonLp2);
+        LinearLayout.LayoutParams buttonLp3 = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.75f);
+        actions.addView(modelButton, buttonLp3);
         searchCard.addView(actions);
 
+        LinearLayout refreshRow = new LinearLayout(this);
+        refreshRow.setOrientation(LinearLayout.HORIZONTAL);
+        refreshRow.setGravity(Gravity.CENTER_VERTICAL);
+        refreshRow.setPadding(0, dp(8), 0, 0);
+        refreshProgress = new ProgressBar(this);
+        refreshProgress.setVisibility(View.GONE);
+        LinearLayout.LayoutParams progressLp = new LinearLayout.LayoutParams(dp(18), dp(18));
+        progressLp.rightMargin = dp(8);
+        refreshRow.addView(refreshProgress, progressLp);
+
+        TextView refreshHint = Styles.miniText(this, "刷新时会显示加载状态，识别优先使用 Gemini 图像理解，缺少 key 时回退到本地识别。");
+        refreshHint.setTextSize(11.5f);
+        refreshRow.addView(refreshHint, new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f));
+        searchCard.addView(refreshRow);
+
         statusView = Styles.body(this, "准备好了，导入一张截图后就能自动识别并存档。");
-        statusView.setPadding(dp(4), dp(10), dp(4), dp(8));
+        statusView.setPadding(dp(4), dp(8), dp(4), dp(8));
         scrollChild.addView(statusView);
 
         LinearLayout listHeader = new LinearLayout(this);
@@ -398,14 +432,26 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
     }
 
     private void refreshRecords() {
+        setRefreshing(true);
         executor.execute(() -> {
             List<ScreenshotRecord> records = repository.loadRecords();
             runOnUiThread(() -> {
                 allRecords.clear();
                 allRecords.addAll(records);
                 applyFilters();
+                setRefreshing(false);
             });
         });
+    }
+
+    private void setRefreshing(boolean refreshing) {
+        if (refreshProgress != null) {
+            refreshProgress.setVisibility(refreshing ? View.VISIBLE : View.GONE);
+        }
+        if (refreshButton != null) {
+            refreshButton.setEnabled(!refreshing);
+            refreshButton.setText(refreshing ? "刷新中…" : "刷新");
+        }
     }
 
     private void applyFilters() {
@@ -470,14 +516,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         } else {
             latestView.setValue(shorten(visibleRecords.get(0).title, 12));
         }
-
-        StringBuilder builder = new StringBuilder();
-        builder.append("当前显示 ").append(visibleRecords.size()).append("/").append(allRecords.size()).append(" 条");
-        builder.append(" · 筛选：").append(filterLabel(currentFilter));
-        if (!TextUtils.isEmpty(currentQuery)) {
-            builder.append(" · 关键词：").append(currentQuery.trim());
-        }
-        statusView.setText(builder.toString());
+        statusView.setText(buildStatusText());
     }
 
     private void updateEmptyState() {
@@ -728,6 +767,90 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         } else {
             Toast.makeText(this, "未安装高德地图", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void showModelSettings() {
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16), dp(16), dp(16), dp(16));
+        panel.setBackground(Styles.panelBackground());
+
+        TextView title = Styles.sectionTitle(this, "Gemini 模型设置");
+        TextView hint = Styles.body(this, "填入 Google AI Studio 的 API key 后，导入截图时会优先使用 Gemini 2.5 Flash-Lite 做图片理解。没有 key 时会自动回退到本地 OCR。");
+        hint.setPadding(0, dp(6), 0, dp(12));
+
+        EditText keyField = Styles.inputField(this, "API Key", false);
+        keyField.setText(getGeminiApiKey());
+
+        TextView state = Styles.miniText(this, isBlank(getGeminiApiKey()) ? "当前：本地识别回退模式" : "当前：Gemini 优先模式");
+        state.setPadding(0, dp(8), 0, dp(12));
+
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button saveButton = Styles.primaryButton(this, "保存");
+        saveButton.setOnClickListener(v -> {
+            saveGeminiApiKey(keyField.getText().toString());
+            Toast.makeText(this, "模型设置已保存", Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            updateStatusLine();
+        });
+
+        Button clearButton = Styles.secondaryButton(this, "清空");
+        clearButton.setOnClickListener(v -> {
+            keyField.setText("");
+            saveGeminiApiKey("");
+            state.setText("当前：本地识别回退模式");
+            updateStatusLine();
+        });
+
+        LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        saveLp.rightMargin = dp(8);
+        actionRow.addView(saveButton, saveLp);
+        LinearLayout.LayoutParams clearLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        actionRow.addView(clearButton, clearLp);
+
+        panel.addView(title);
+        panel.addView(hint);
+        panel.addView(keyField);
+        panel.addView(state);
+        panel.addView(actionRow);
+
+        dialog.setContentView(panel);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.show();
+    }
+
+    private void updateStatusLine() {
+        statusView.setText(buildStatusText());
+    }
+
+    private String buildStatusText() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("当前显示 ").append(visibleRecords.size()).append("/").append(allRecords.size()).append(" 条");
+        builder.append(" · 筛选：").append(filterLabel(currentFilter));
+        builder.append(" · 识别：").append(isBlank(getGeminiApiKey()) ? "本地回退" : "Gemini 优先");
+        if (!TextUtils.isEmpty(currentQuery)) {
+            builder.append(" · 关键词：").append(currentQuery.trim());
+        }
+        return builder.toString();
+    }
+
+    private String getGeminiApiKey() {
+        SharedPreferences prefs = getSharedPreferences("snapnest_prefs", MODE_PRIVATE);
+        return prefs.getString("gemini_api_key", "");
+    }
+
+    private void saveGeminiApiKey(String apiKey) {
+        SharedPreferences prefs = getSharedPreferences("snapnest_prefs", MODE_PRIVATE);
+        prefs.edit().putString("gemini_api_key", apiKey == null ? "" : apiKey.trim()).apply();
     }
 
     private boolean containsIgnoreCase(String value, String query) {

@@ -120,14 +120,14 @@ public final class Styles {
         editText.setHint(hint);
         editText.setTextColor(0xFFF4F8FF);
         editText.setHintTextColor(0xFF8095B6);
-        editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        editText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         editText.setBackground(inputBackground());
-        editText.setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14));
+        editText.setPadding(dp(context, 14), dp(context, 11), dp(context, 14), dp(context, 11));
         editText.setSingleLine(!multiLine);
         editText.setTextIsSelectable(true);
         editText.setLineSpacing(0f, 1.1f);
         if (multiLine) {
-            editText.setMinLines(3);
+            editText.setMinLines(2);
             editText.setGravity(Gravity.TOP | Gravity.START);
         }
         return editText;

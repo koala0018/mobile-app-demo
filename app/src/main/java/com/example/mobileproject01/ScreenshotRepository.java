@@ -2,6 +2,7 @@ package com.example.mobileproject01;
 
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -28,8 +29,12 @@ import java.util.List;
 import java.util.Locale;
 
 final class ScreenshotRepository {
+    private static final String PREFS = "snapnest_prefs";
+    private static final String KEY_GEMINI_API_KEY = "gemini_api_key";
+
     private final Context context;
     private final RecordStore store;
+    private final GeminiImageAnalyzer geminiAnalyzer = new GeminiImageAnalyzer();
 
     ScreenshotRepository(Context context) {
         this.context = context.getApplicationContext();
@@ -49,8 +54,6 @@ final class ScreenshotRepository {
     }
 
     ScreenshotRecord importFromUri(Uri uri, String sourceLabel) throws Exception {
-        String rawText = recognizeText(uri);
-        ParsedScreenshot parsed = ScreenshotParser.parse(rawText);
         long createdAt = System.currentTimeMillis();
 
         File recordsDir = new File(context.getFilesDir(), "screenshots");
@@ -66,13 +69,15 @@ final class ScreenshotRepository {
         File thumbFile = new File(recordsDir, "thumb_" + baseName + ".jpg");
         createThumbnail(originalFile, thumbFile);
 
+        ParsedScreenshot parsed = analyzeScreenshot(originalFile, uri);
+
         ScreenshotRecord record = new ScreenshotRecord(
                 0L,
                 parsed.title,
                 parsed.address,
                 parsed.phone,
                 parsed.rawText,
-                "",
+                parsed.notes,
                 originalFile.getAbsolutePath(),
                 thumbFile.getAbsolutePath(),
                 sourceLabel,
@@ -90,6 +95,24 @@ final class ScreenshotRepository {
                 record.thumbnailPath,
                 record.sourceLabel,
                 record.createdAt);
+    }
+
+    private ParsedScreenshot analyzeScreenshot(File originalFile, Uri uri) throws Exception {
+        String apiKey = getGeminiApiKey();
+        if (!TextUtils.isEmpty(apiKey)) {
+            try {
+                return geminiAnalyzer.analyze(originalFile, apiKey);
+            } catch (Exception ignored) {
+                // Fall back to local OCR when remote analysis fails.
+            }
+        }
+        String rawText = recognizeText(uri);
+        return ScreenshotParser.parse(rawText);
+    }
+
+    private String getGeminiApiKey() {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return prefs.getString(KEY_GEMINI_API_KEY, "");
     }
 
     private String recognizeText(Uri uri) throws Exception {

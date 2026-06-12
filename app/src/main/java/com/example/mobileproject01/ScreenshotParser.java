@@ -33,7 +33,7 @@ final class ScreenshotParser {
         if (TextUtils.isEmpty(title)) {
             title = "未命名截图";
         }
-        return new ParsedScreenshot(title, address, phone, rawText == null ? "" : rawText.trim());
+        return new ParsedScreenshot(title, address, phone, "", rawText == null ? "" : rawText.trim());
     }
 
     private static List<String> normalizeLines(String rawText) {

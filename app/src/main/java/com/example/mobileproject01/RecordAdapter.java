@@ -51,13 +51,13 @@ public class RecordAdapter extends RecyclerView.Adapter<RecordAdapter.RecordView
     public RecordViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(14), dp(14), dp(14));
+        card.setPadding(dp(10), dp(10), dp(10), dp(10));
         card.setBackground(Styles.cardBackground(0xFF13243E, 0xFF1B3355));
-        card.setElevation(dp(7));
+        card.setElevation(dp(5));
         RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(12);
+        params.bottomMargin = dp(8);
         card.setLayoutParams(params);
         Styles.applyClickableSurface(card);
 
@@ -66,8 +66,8 @@ public class RecordAdapter extends RecyclerView.Adapter<RecordAdapter.RecordView
         topRow.setGravity(Gravity.TOP);
 
         ImageView thumb = new ImageView(context);
-        LinearLayout.LayoutParams thumbParams = new LinearLayout.LayoutParams(dp(92), dp(92));
-        thumbParams.rightMargin = dp(14);
+        LinearLayout.LayoutParams thumbParams = new LinearLayout.LayoutParams(dp(64), dp(64));
+        thumbParams.rightMargin = dp(10);
         thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
         thumb.setBackground(Styles.previewBackground());
         topRow.addView(thumb, thumbParams);
@@ -77,66 +77,65 @@ public class RecordAdapter extends RecyclerView.Adapter<RecordAdapter.RecordView
         column.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView title = Styles.itemTitle(context, "标题");
+        title.setTextSize(15.5f);
         TextView meta = Styles.miniText(context, "");
-        meta.setPadding(0, dp(4), 0, 0);
+        meta.setPadding(0, dp(2), 0, 0);
 
         LinearLayout badgeRow = new LinearLayout(context);
         badgeRow.setOrientation(LinearLayout.HORIZONTAL);
-        badgeRow.setPadding(0, dp(8), 0, 0);
+        badgeRow.setPadding(0, dp(6), 0, 0);
 
         TextView address = Styles.badge(context, "地址");
+        address.setTextSize(10.5f);
         address.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         TextView phone = Styles.badge(context, "电话");
+        phone.setTextSize(10.5f);
         LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        phoneLp.leftMargin = dp(8);
+        phoneLp.leftMargin = dp(6);
         TextView source = Styles.badge(context, "来源");
+        source.setTextSize(10.5f);
         LinearLayout.LayoutParams sourceLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        sourceLp.leftMargin = dp(8);
+        sourceLp.leftMargin = dp(6);
         badgeRow.addView(address);
         badgeRow.addView(phone, phoneLp);
         badgeRow.addView(source, sourceLp);
 
-        TextView notes = Styles.itemSnippet(context, "");
-        notes.setPadding(0, dp(10), 0, 0);
-
-        TextView raw = Styles.itemSnippet(context, "");
-        raw.setPadding(0, dp(8), 0, 0);
-
         column.addView(title);
         column.addView(meta);
         column.addView(badgeRow);
-        column.addView(notes);
-        column.addView(raw);
 
         topRow.addView(column);
         card.addView(topRow);
 
         LinearLayout actions = new LinearLayout(context);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, dp(12), 0, 0);
+        actions.setPadding(0, dp(8), 0, 0);
 
         Button editButton = Styles.secondaryButton(context, "编辑");
         Button mapButton = Styles.secondaryButton(context, "地图");
         Button deleteButton = Styles.dangerButton(context, "删除");
+        editButton.setTextSize(11.5f);
+        mapButton.setTextSize(11.5f);
+        deleteButton.setTextSize(11.5f);
 
         LinearLayout.LayoutParams actionLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        actionLp.rightMargin = dp(8);
+        actionLp.rightMargin = dp(6);
         actions.addView(editButton, actionLp);
         LinearLayout.LayoutParams actionLp2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        actionLp2.rightMargin = dp(8);
+        actionLp2.rightMargin = dp(6);
         actions.addView(mapButton, actionLp2);
         LinearLayout.LayoutParams actionLp3 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         actions.addView(deleteButton, actionLp3);
 
         card.addView(actions);
 
-        return new RecordViewHolder(card, thumb, title, meta, address, phone, source, notes, raw, editButton, mapButton, deleteButton);
+        return new RecordViewHolder(card, thumb, title, meta, address, phone, source, editButton, mapButton, deleteButton);
     }
 
     @Override
@@ -147,12 +146,6 @@ public class RecordAdapter extends RecyclerView.Adapter<RecordAdapter.RecordView
         holder.address.setText("地址：" + compactSafe(record.address));
         holder.phone.setText("电话：" + compactSafe(record.phone));
         holder.source.setText("来源：" + compactSafe(record.sourceLabel));
-
-        String notesText = compactSafe(record.notes);
-        holder.notes.setText("备注：" + notesText);
-        holder.notes.setVisibility(notesText.equals("未填写") ? View.GONE : View.VISIBLE);
-
-        holder.raw.setText("识别：" + safeSnippet(record.rawText));
 
         Bitmap bitmap = BitmapFactory.decodeFile(record.thumbnailPath);
         if (bitmap != null) {
@@ -210,8 +203,6 @@ public class RecordAdapter extends RecyclerView.Adapter<RecordAdapter.RecordView
         final TextView address;
         final TextView phone;
         final TextView source;
-        final TextView notes;
-        final TextView raw;
         final Button editButton;
         final Button mapButton;
         final Button deleteButton;
@@ -223,8 +214,6 @@ public class RecordAdapter extends RecyclerView.Adapter<RecordAdapter.RecordView
                          TextView address,
                          TextView phone,
                          TextView source,
-                         TextView notes,
-                         TextView raw,
                          Button editButton,
                          Button mapButton,
                          Button deleteButton) {
@@ -235,8 +224,6 @@ public class RecordAdapter extends RecyclerView.Adapter<RecordAdapter.RecordView
             this.address = address;
             this.phone = phone;
             this.source = source;
-            this.notes = notes;
-            this.raw = raw;
             this.editButton = editButton;
             this.mapButton = mapButton;
             this.deleteButton = deleteButton;
