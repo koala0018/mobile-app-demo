@@ -3,11 +3,15 @@ package com.example.mobileproject01;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
@@ -32,6 +36,9 @@ import android.widget.Toast;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -49,6 +56,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
     private static final String KEY_GEMINI_API_KEY = "gemini_api_key";
     private static final String KEY_SILICONFLOW_API_KEY = "siliconflow_api_key";
     private static final String KEY_SILICONFLOW_MODEL = "siliconflow_model";
+    private static final String KEY_PASSWORD_HASH = "key_password_hash";
     private static final int FILTER_ALL = 0;
     private static final int FILTER_ADDRESS = 1;
     private static final int FILTER_PHONE = 2;
@@ -76,12 +84,33 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
     private String currentQuery = "";
     private int currentFilter = FILTER_ALL;
     private int runningImports;
+    private final BroadcastReceiver importReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (ScreenshotImportService.ACTION_IMPORT_STARTED.equals(action)) {
+                runningImports++;
+                updateStatus();
+            } else if (ScreenshotImportService.ACTION_IMPORT_DONE.equals(action)) {
+                runningImports = Math.max(0, runningImports - 1);
+                String title = intent.getStringExtra(ScreenshotImportService.EXTRA_TITLE);
+                Toast.makeText(MainActivity.this, "识别完成：" + (title == null ? "新记录" : title), Toast.LENGTH_SHORT).show();
+                refreshRecords();
+            } else if (ScreenshotImportService.ACTION_IMPORT_FAILED.equals(action)) {
+                runningImports = Math.max(0, runningImports - 1);
+                String error = intent.getStringExtra(ScreenshotImportService.EXTRA_ERROR);
+                Toast.makeText(MainActivity.this, "识别失败：" + (error == null ? "未知错误" : error), Toast.LENGTH_LONG).show();
+                updateStatus();
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         repository = new ScreenshotRepository(this);
         buildUi();
+        registerImportReceiver();
         refreshRecords();
         ensureApiKey();
         handleIncomingIntent(getIntent());
@@ -105,6 +134,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        unregisterReceiver(importReceiver);
         executor.shutdownNow();
     }
 
@@ -158,7 +188,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
 
         keyButton = Styles.accentButton(this, "Key", Styles.BLUE);
         keyButton.setTextSize(12f);
-        keyButton.setOnClickListener(v -> showApiKeyDialog(true));
+        keyButton.setOnClickListener(v -> requestKeySettingsAccess());
         LinearLayout.LayoutParams keyLp = new LinearLayout.LayoutParams(dp(62), ViewGroup.LayoutParams.WRAP_CONTENT);
         keyLp.rightMargin = dp(8);
         topBar.addView(keyButton, keyLp);
@@ -271,10 +301,73 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         row.addView(button, lp);
     }
 
+    private void registerImportReceiver() {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(ScreenshotImportService.ACTION_IMPORT_STARTED);
+        filter.addAction(ScreenshotImportService.ACTION_IMPORT_DONE);
+        filter.addAction(ScreenshotImportService.ACTION_IMPORT_FAILED);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(importReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(importReceiver, filter);
+        }
+    }
+
     private void ensureApiKey() {
         if (TextUtils.isEmpty(getApiKey())) {
             showApiKeyDialog(false);
         }
+    }
+
+    private void requestKeySettingsAccess() {
+        if (!hasKeyPassword()) {
+            showApiKeyDialog(true);
+            return;
+        }
+        showPasswordDialog(() -> showApiKeyDialog(true));
+    }
+
+    private void showPasswordDialog(Runnable onVerified) {
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(18), dp(18), dp(18));
+        panel.setBackground(Styles.panelBackground());
+
+        TextView title = Styles.sectionTitle(this, "输入密码");
+        TextView body = Styles.body(this, "查看或修改 API Key 前需要验证本地密码。");
+        body.setPadding(0, dp(6), 0, dp(12));
+
+        EditText password = Styles.inputField(this, "密码", false);
+        password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.END);
+        actions.setPadding(0, dp(14), 0, 0);
+        Button confirm = Styles.primaryButton(this, "确认");
+        confirm.setOnClickListener(v -> {
+            if (!verifyKeyPassword(password.getText().toString())) {
+                Toast.makeText(this, "密码不正确", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            dialog.dismiss();
+            onVerified.run();
+        });
+        actions.addView(confirm, new LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        panel.addView(title);
+        panel.addView(body);
+        panel.addView(password);
+        panel.addView(actions);
+        dialog.setContentView(panel);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.show();
     }
 
     private void showApiKeyDialog(boolean cancellable) {
@@ -311,6 +404,16 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         modelInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         modelInput.setText(getSiliconFlowModel());
 
+        boolean needsPasswordCreation = !hasKeyPassword();
+        TextView passwordLabel = Styles.miniText(this, "创建本地密码");
+        passwordLabel.setPadding(0, dp(12), 0, dp(4));
+        EditText passwordInput = Styles.inputField(this, "至少 4 位", false);
+        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        TextView confirmPasswordLabel = Styles.miniText(this, "确认密码");
+        confirmPasswordLabel.setPadding(0, dp(8), 0, dp(4));
+        EditText confirmPasswordInput = Styles.inputField(this, "再次输入密码", false);
+        confirmPasswordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+
         Runnable syncProviderButtons = () -> {
             Styles.setChipSelected(geminiButton, PROVIDER_GEMINI.equals(selectedProvider[0]));
             Styles.setChipSelected(siliconButton, PROVIDER_SILICONFLOW.equals(selectedProvider[0]));
@@ -341,6 +444,19 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
                 Toast.makeText(this, "API Key 看起来不完整", Toast.LENGTH_SHORT).show();
                 return;
             }
+            if (needsPasswordCreation) {
+                String password = passwordInput.getText().toString();
+                String confirmPassword = confirmPasswordInput.getText().toString();
+                if (password.length() < 4) {
+                    Toast.makeText(this, "密码至少 4 位", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (!password.equals(confirmPassword)) {
+                    Toast.makeText(this, "两次密码不一致", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                saveKeyPassword(password);
+            }
             saveProvider(selectedProvider[0]);
             saveApiKey(selectedProvider[0], key);
             if (PROVIDER_SILICONFLOW.equals(selectedProvider[0])) {
@@ -358,6 +474,12 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         panel.addView(input);
         panel.addView(modelLabel);
         panel.addView(modelInput);
+        if (needsPasswordCreation) {
+            panel.addView(passwordLabel);
+            panel.addView(passwordInput);
+            panel.addView(confirmPasswordLabel);
+            panel.addView(confirmPasswordInput);
+        }
         panel.addView(actions);
 
         dialog.setContentView(panel);
@@ -395,26 +517,16 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
             showApiKeyDialog(false);
             return;
         }
-        runningImports++;
-        updateStatus();
-        Toast.makeText(this, "已加入后台识别", Toast.LENGTH_SHORT).show();
-        executor.execute(() -> {
-            try {
-                ScreenshotRecord record = repository.importFromUri(uri, sourceLabel);
-                runOnUiThread(() -> {
-                    allRecords.add(0, record);
-                    applyFilters();
-                    Toast.makeText(this, "识别完成：" + record.title, Toast.LENGTH_SHORT).show();
-                });
-            } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(this, "识别失败：" + e.getMessage(), Toast.LENGTH_LONG).show());
-            } finally {
-                runOnUiThread(() -> {
-                    runningImports = Math.max(0, runningImports - 1);
-                    refreshRecords();
-                });
-            }
-        });
+        Intent intent = new Intent(this, ScreenshotImportService.class);
+        intent.setData(uri);
+        intent.putExtra(ScreenshotImportService.EXTRA_SOURCE, sourceLabel);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
+        Toast.makeText(this, "已加入后台识别队列", Toast.LENGTH_SHORT).show();
     }
 
     private void refreshRecords() {
@@ -612,15 +724,43 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
             Toast.makeText(this, "没有可用地址", Toast.LENGTH_SHORT).show();
             return;
         }
-        String keyword = Uri.encode(address.trim());
-        String source = Uri.encode(getString(R.string.app_name));
-        Intent amap = new Intent(Intent.ACTION_VIEW, Uri.parse("androidamap://search?sourceApplication=" + source + "&keyword=" + keyword + "&dev=0"));
-        amap.setPackage("com.autonavi.minimap");
-        if (amap.resolveActivity(getPackageManager()) != null) {
-            startActivity(amap);
+        String raw = address.trim();
+        String keyword = Uri.encode(raw);
+        String source = "jietu_xunwei";
+
+        if (tryOpenUri("androidamap://poi?sourceApplication=" + source + "&keywords=" + keyword + "&dev=0", "com.autonavi.minimap")) {
             return;
         }
-        Toast.makeText(this, "未检测到高德地图 App，无法直接搜索", Toast.LENGTH_LONG).show();
+        if (tryOpenUri("androidamap://search?sourceApplication=" + source + "&keywords=" + keyword + "&dev=0", "com.autonavi.minimap")) {
+            return;
+        }
+        if (tryOpenUri("amapuri://poi?sourceApplication=" + source + "&keywords=" + keyword + "&dev=0", "com.autonavi.minimap")) {
+            return;
+        }
+        if (tryOpenUri("geo:0,0?q=" + keyword, null)) {
+            return;
+        }
+        if (tryOpenUri("https://uri.amap.com/search?keyword=" + keyword, null)) {
+            return;
+        }
+        if (tryOpenUri("https://m.amap.com/search/mapview/keywords=" + keyword, null)) {
+            return;
+        }
+        Toast.makeText(this, "无法打开地图，请检查高德地图或浏览器权限", Toast.LENGTH_LONG).show();
+    }
+
+    private boolean tryOpenUri(String uri, String packageName) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
+            if (!TextUtils.isEmpty(packageName)) {
+                intent.setPackage(packageName);
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private String getApiKey() {
@@ -675,6 +815,36 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
                 .edit()
                 .putString(KEY_SILICONFLOW_MODEL, clean)
                 .apply();
+    }
+
+    private boolean hasKeyPassword() {
+        return !TextUtils.isEmpty(getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PASSWORD_HASH, ""));
+    }
+
+    private void saveKeyPassword(String password) {
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_PASSWORD_HASH, hashPassword(password))
+                .apply();
+    }
+
+    private boolean verifyKeyPassword(String password) {
+        String stored = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PASSWORD_HASH, "");
+        return !TextUtils.isEmpty(stored) && stored.equals(hashPassword(password));
+    }
+
+    private String hashPassword(String password) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest((password == null ? "" : password).getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder();
+            for (byte value : bytes) {
+                builder.append(String.format(Locale.US, "%02x", value));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 
     private String value(EditText input, String fallback) {
