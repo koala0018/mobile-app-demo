@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -105,19 +104,19 @@ public final class Styles {
 
     static Button primaryButton(Context context, String text) {
         Button button = baseButton(context, text, INK);
-        button.setBackground(cardBackground(GREEN, GREEN));
+        styleButton(button, GREEN);
         return button;
     }
 
     static Button secondaryButton(Context context, String text) {
         Button button = baseButton(context, text, INK);
-        button.setBackground(cardBackground(0xFFFFFFFF, 0xFFFFFFFF));
+        styleButton(button, 0xFFFFFFFF);
         return button;
     }
 
     static Button accentButton(Context context, String text, int color) {
         Button button = baseButton(context, text, INK);
-        button.setBackground(cardBackground(color, color));
+        styleButton(button, color);
         return button;
     }
 
@@ -126,13 +125,17 @@ public final class Styles {
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         button.setMinHeight(dp(context, 38));
         button.setPadding(dp(context, 12), dp(context, 7), dp(context, 12), dp(context, 7));
-        button.setBackground(chipBackground(false));
+        styleButton(button, 0xFFFFFFFF);
         return button;
+    }
+
+    static void setChipSelected(Button button, boolean selected) {
+        styleButton(button, selected ? GREEN : 0xFFFFFFFF);
     }
 
     static Button dangerButton(Context context, String text) {
         Button button = baseButton(context, text, INK);
-        button.setBackground(cardBackground(RED, RED));
+        styleButton(button, RED);
         return button;
     }
 
@@ -182,14 +185,8 @@ public final class Styles {
     }
 
     static void applyClickableSurface(View view) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            view.setClickable(true);
-            view.setFocusable(true);
-            view.setBackground(new RippleDrawable(
-                    ColorStateList.valueOf(0x1A111111),
-                    view.getBackground(),
-                    null));
-        }
+        view.setClickable(true);
+        view.setFocusable(true);
         applyPressFeedback(view);
     }
 
@@ -234,5 +231,23 @@ public final class Styles {
         button.setGravity(Gravity.CENTER);
         applyPressFeedback(button);
         return button;
+    }
+
+    private static void styleButton(Button button, int color) {
+        if (button instanceof MaterialButton) {
+            MaterialButton materialButton = (MaterialButton) button;
+            materialButton.setBackgroundTintList(ColorStateList.valueOf(color));
+            materialButton.setStrokeColor(ColorStateList.valueOf(LINE));
+            materialButton.setStrokeWidth(dp(button.getContext(), 1));
+            materialButton.setCornerRadius(dp(button.getContext(), 8));
+            materialButton.setRippleColor(ColorStateList.valueOf(0x22111111));
+            materialButton.setTextColor(INK);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setBackgroundTintList(ColorStateList.valueOf(color));
+            button.setTextColor(INK);
+        } else {
+            button.setBackground(cardBackground(color, color));
+            button.setTextColor(INK);
+        }
     }
 }

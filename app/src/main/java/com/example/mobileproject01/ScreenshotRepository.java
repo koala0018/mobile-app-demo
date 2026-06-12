@@ -17,7 +17,12 @@ import java.util.Locale;
 
 final class ScreenshotRepository {
     private static final String PREFS = "snapnest_prefs";
+    private static final String KEY_PROVIDER = "ai_provider";
+    private static final String PROVIDER_GEMINI = "gemini";
+    private static final String PROVIDER_SILICONFLOW = "siliconflow";
     private static final String KEY_GEMINI_API_KEY = "gemini_api_key";
+    private static final String KEY_SILICONFLOW_API_KEY = "siliconflow_api_key";
+    private static final String KEY_SILICONFLOW_MODEL = "siliconflow_model";
 
     private final Context context;
     private final RecordStore store;
@@ -72,16 +77,37 @@ final class ScreenshotRepository {
     }
 
     private ParsedScreenshot analyzeScreenshot(File originalFile) throws Exception {
-        String apiKey = getGeminiApiKey();
+        String provider = getProvider();
+        String apiKey = getApiKey(provider);
         if (TextUtils.isEmpty(apiKey)) {
-            throw new IOException("请先填写 Google Gemini API Key");
+            throw new IOException("请先填写当前模型的 API Key");
+        }
+        if (PROVIDER_SILICONFLOW.equals(provider)) {
+            return geminiAnalyzer.analyzeSiliconFlow(originalFile, apiKey, getSiliconFlowModel());
         }
         return geminiAnalyzer.analyze(originalFile, apiKey);
     }
 
-    private String getGeminiApiKey() {
+    private String getProvider() {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_GEMINI_API_KEY, "");
+        return prefs.getString(KEY_PROVIDER, PROVIDER_SILICONFLOW);
+    }
+
+    private String getApiKey(String provider) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String keyName = PROVIDER_SILICONFLOW.equals(provider) ? KEY_SILICONFLOW_API_KEY : KEY_GEMINI_API_KEY;
+        return prefs.getString(keyName, "");
+    }
+
+    private String getSiliconFlowModel() {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String model = prefs.getString(KEY_SILICONFLOW_MODEL, GeminiImageAnalyzer.DEFAULT_SILICONFLOW_MODEL);
+        if ("zai-org/GLM-4.6V".equals(model)
+                || "Qwen/Qwen2.5-VL-7B-Instruct".equals(model)
+                || "Qwen/Qwen3-VL-Embedding-8B".equals(model)) {
+            return GeminiImageAnalyzer.DEFAULT_SILICONFLOW_MODEL;
+        }
+        return model;
     }
 
     private void copyUriToFile(Uri uri, File outputFile) throws IOException {

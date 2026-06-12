@@ -22,6 +22,8 @@ final class GeminiImageAnalyzer {
     private static final String MODEL = "gemini-2.0-flash-lite";
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent";
+    private static final String SILICONFLOW_ENDPOINT = "https://api.siliconflow.cn/v1/chat/completions";
+    static final String DEFAULT_SILICONFLOW_MODEL = "Qwen/Qwen3-VL-32B-Instruct";
 
     ParsedScreenshot analyze(File imageFile, String apiKey) throws IOException, JSONException {
         if (TextUtils.isEmpty(apiKey)) {
@@ -31,6 +33,18 @@ final class GeminiImageAnalyzer {
         String encoded = Base64.encodeToString(toJpegBytes(imageFile), Base64.NO_WRAP);
         String response = postJson(apiKey, buildPayload(encoded));
         return parseResponse(response);
+    }
+
+    ParsedScreenshot analyzeSiliconFlow(File imageFile, String apiKey, String model) throws IOException, JSONException {
+        if (TextUtils.isEmpty(apiKey)) {
+            throw new IOException("请先填写硅基流动 API Key");
+        }
+        if (TextUtils.isEmpty(model)) {
+            model = DEFAULT_SILICONFLOW_MODEL;
+        }
+        String encoded = Base64.encodeToString(toJpegBytes(imageFile), Base64.NO_WRAP);
+        String response = postOpenAiCompatible(apiKey, buildOpenAiPayload(encoded, model));
+        return parseOpenAiResponse(response);
     }
 
     private JSONObject buildPayload(String base64Image) throws JSONException {
@@ -74,8 +88,8 @@ final class GeminiImageAnalyzer {
             connection.setDoInput(true);
             connection.setDoOutput(true);
             connection.setUseCaches(false);
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(45000);
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(35000);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
             connection.setRequestProperty("Connection", "close");
@@ -98,6 +112,95 @@ final class GeminiImageAnalyzer {
                 connection.disconnect();
             }
         }
+    }
+
+    private JSONObject buildOpenAiPayload(String base64Image, String model) throws JSONException {
+        JSONObject textPart = new JSONObject();
+        textPart.put("type", "text");
+        textPart.put("text",
+                "你是一个中文截图信息提取助手。请只根据图片内容提取店名、地点名、地址、电话和补充说明。"
+                        + "只输出严格 JSON，不要 Markdown，不要解释。"
+                        + "JSON 字段必须是 title、address、phone、notes、rawText。"
+                        + "如果字段不存在，请返回空字符串。");
+
+        JSONObject imageUrl = new JSONObject();
+        imageUrl.put("url", "data:image/jpeg;base64," + base64Image);
+        JSONObject imagePart = new JSONObject();
+        imagePart.put("type", "image_url");
+        imagePart.put("image_url", imageUrl);
+
+        JSONObject message = new JSONObject();
+        message.put("role", "user");
+        message.put("content", new org.json.JSONArray().put(textPart).put(imagePart));
+
+        JSONObject root = new JSONObject();
+        root.put("model", model);
+        root.put("messages", new org.json.JSONArray().put(message));
+        root.put("temperature", 0.1);
+        root.put("max_tokens", 700);
+        root.put("response_format", new JSONObject().put("type", "json_object"));
+        return root;
+    }
+
+    private String postOpenAiCompatible(String apiKey, JSONObject payload) throws IOException {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(SILICONFLOW_ENDPOINT);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoInput(true);
+            connection.setDoOutput(true);
+            connection.setUseCaches(false);
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(35000);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+            connection.setRequestProperty("Connection", "close");
+
+            byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(bytes);
+            }
+
+            int code = connection.getResponseCode();
+            InputStream stream = code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream();
+            String body = readAll(stream);
+            if (code < 200 || code >= 300) {
+                if (code == 403 && body.toLowerCase(java.util.Locale.ROOT).contains("model")) {
+                    throw new IOException("当前硅基流动账号不可调用该模型，请在 Key 设置里换成控制台可用的视觉模型 ID。原始错误：" + body);
+                }
+                throw new IOException("硅基流动 HTTP " + code + ": " + body);
+            }
+            return body;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private ParsedScreenshot parseOpenAiResponse(String body) throws JSONException {
+        JSONObject root = new JSONObject(body);
+        String text = "";
+        org.json.JSONArray choices = root.optJSONArray("choices");
+        if (choices != null && choices.length() > 0) {
+            JSONObject message = choices.getJSONObject(0).optJSONObject("message");
+            if (message != null) {
+                text = message.optString("content", "");
+            }
+        }
+        JSONObject result = safeJson(text);
+        String title = clean(result.optString("title", ""));
+        String address = clean(result.optString("address", ""));
+        String phone = clean(result.optString("phone", ""));
+        String notes = clean(result.optString("notes", ""));
+        String rawText = clean(result.optString("rawText", text));
+        if (TextUtils.isEmpty(title)) {
+            title = "未命名截图";
+        }
+        return new ParsedScreenshot(title, address, phone, notes, rawText);
     }
 
     private ParsedScreenshot parseResponse(String body) throws JSONException {

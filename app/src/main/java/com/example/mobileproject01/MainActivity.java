@@ -43,7 +43,12 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity implements RecordAdapter.OnRecordActionListener {
     private static final int REQUEST_PICK_IMAGE = 1001;
     private static final String PREFS = "snapnest_prefs";
+    private static final String KEY_PROVIDER = "ai_provider";
+    private static final String PROVIDER_GEMINI = "gemini";
+    private static final String PROVIDER_SILICONFLOW = "siliconflow";
     private static final String KEY_GEMINI_API_KEY = "gemini_api_key";
+    private static final String KEY_SILICONFLOW_API_KEY = "siliconflow_api_key";
+    private static final String KEY_SILICONFLOW_MODEL = "siliconflow_model";
     private static final int FILTER_ALL = 0;
     private static final int FILTER_ADDRESS = 1;
     private static final int FILTER_PHONE = 2;
@@ -59,6 +64,7 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
     private TextView countView;
     private TextView statusView;
     private TextView emptyView;
+    private TextView providerView;
     private EditText searchField;
     private ProgressBar progressBar;
     private Button importButton;
@@ -144,8 +150,10 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         TextView title = Styles.title(this, getString(R.string.app_name));
         title.setTextSize(24f);
         countView = Styles.miniText(this, "0 条");
+        providerView = Styles.miniText(this, "");
         titleBox.addView(title);
         titleBox.addView(countView);
+        titleBox.addView(providerView);
         topBar.addView(titleBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         keyButton = Styles.accentButton(this, "Key", Styles.BLUE);
@@ -279,12 +287,48 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         panel.setPadding(dp(18), dp(18), dp(18), dp(18));
         panel.setBackground(Styles.panelBackground());
 
-        TextView title = Styles.sectionTitle(this, "Google AI API Key");
-        TextView body = Styles.body(this, "首次使用需要填写一次。Key 会保存在手机本地，之后导入截图会直接用它进行 Gemini 图片识别。");
+        TextView title = Styles.sectionTitle(this, "大模型识别设置");
+        TextView body = Styles.body(this, "选择识别模型并填写对应 API Key。国内模式经硅基流动调用视觉模型；Key 只保存在手机本地。");
         body.setPadding(0, dp(6), 0, dp(12));
-        EditText input = Styles.inputField(this, "AIza...", false);
+
+        final String[] selectedProvider = {getProvider()};
+        LinearLayout providerRow = new LinearLayout(this);
+        providerRow.setGravity(Gravity.CENTER_VERTICAL);
+        Button geminiButton = Styles.chipButton(this, "Gemini");
+        Button siliconButton = Styles.chipButton(this, "国内视觉模型");
+        providerRow.addView(geminiButton, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams siliconLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        siliconLp.leftMargin = dp(8);
+        providerRow.addView(siliconButton, siliconLp);
+
+        EditText input = Styles.inputField(this, keyHint(selectedProvider[0]), false);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         input.setText(getApiKey());
+
+        TextView modelLabel = Styles.miniText(this, "硅基流动模型名称");
+        modelLabel.setPadding(0, dp(12), 0, dp(4));
+        EditText modelInput = Styles.inputField(this, GeminiImageAnalyzer.DEFAULT_SILICONFLOW_MODEL, false);
+        modelInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        modelInput.setText(getSiliconFlowModel());
+
+        Runnable syncProviderButtons = () -> {
+            Styles.setChipSelected(geminiButton, PROVIDER_GEMINI.equals(selectedProvider[0]));
+            Styles.setChipSelected(siliconButton, PROVIDER_SILICONFLOW.equals(selectedProvider[0]));
+            input.setHint(keyHint(selectedProvider[0]));
+            input.setText(getApiKey(selectedProvider[0]));
+            boolean isSiliconFlow = PROVIDER_SILICONFLOW.equals(selectedProvider[0]);
+            modelLabel.setVisibility(isSiliconFlow ? View.VISIBLE : View.GONE);
+            modelInput.setVisibility(isSiliconFlow ? View.VISIBLE : View.GONE);
+        };
+        geminiButton.setOnClickListener(v -> {
+            selectedProvider[0] = PROVIDER_GEMINI;
+            syncProviderButtons.run();
+        });
+        siliconButton.setOnClickListener(v -> {
+            selectedProvider[0] = PROVIDER_SILICONFLOW;
+            syncProviderButtons.run();
+        });
+        syncProviderButtons.run();
 
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.END);
@@ -297,16 +341,23 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
                 Toast.makeText(this, "API Key 看起来不完整", Toast.LENGTH_SHORT).show();
                 return;
             }
-            saveApiKey(key);
+            saveProvider(selectedProvider[0]);
+            saveApiKey(selectedProvider[0], key);
+            if (PROVIDER_SILICONFLOW.equals(selectedProvider[0])) {
+                saveSiliconFlowModel(modelInput.getText().toString());
+            }
             dialog.dismiss();
-            Toast.makeText(this, "已保存，后续会自动使用 Gemini 识别", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "已保存，后续会自动使用当前模型识别", Toast.LENGTH_SHORT).show();
             updateStatus();
         });
         actions.addView(save, new LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         panel.addView(title);
         panel.addView(body);
+        panel.addView(providerRow);
         panel.addView(input);
+        panel.addView(modelLabel);
+        panel.addView(modelInput);
         panel.addView(actions);
 
         dialog.setContentView(panel);
@@ -350,7 +401,11 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         executor.execute(() -> {
             try {
                 ScreenshotRecord record = repository.importFromUri(uri, sourceLabel);
-                runOnUiThread(() -> Toast.makeText(this, "识别完成：" + record.title, Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    allRecords.add(0, record);
+                    applyFilters();
+                    Toast.makeText(this, "识别完成：" + record.title, Toast.LENGTH_SHORT).show();
+                });
             } catch (Exception e) {
                 runOnUiThread(() -> Toast.makeText(this, "识别失败：" + e.getMessage(), Toast.LENGTH_LONG).show());
             } finally {
@@ -414,10 +469,10 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
     }
 
     private void updateFilterButtons() {
-        allFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_ALL));
-        addressFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_ADDRESS));
-        phoneFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_PHONE));
-        notesFilterButton.setBackground(Styles.chipBackground(currentFilter == FILTER_NOTES));
+        Styles.setChipSelected(allFilterButton, currentFilter == FILTER_ALL);
+        Styles.setChipSelected(addressFilterButton, currentFilter == FILTER_ADDRESS);
+        Styles.setChipSelected(phoneFilterButton, currentFilter == FILTER_PHONE);
+        Styles.setChipSelected(notesFilterButton, currentFilter == FILTER_NOTES);
     }
 
     private void updateStatus() {
@@ -425,7 +480,8 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
         progressBar.setVisibility(busy ? View.VISIBLE : View.GONE);
         importButton.setEnabled(!TextUtils.isEmpty(getApiKey()));
         keyButton.setText(TextUtils.isEmpty(getApiKey()) ? "Key" : "改Key");
-        statusView.setText(busy ? "后台识别中，可继续浏览和操作" : "Gemini 图片识别已就绪");
+        providerView.setText(modelLabel() + (TextUtils.isEmpty(getApiKey()) ? " / 未设置 Key" : " / 已设置 Key"));
+        statusView.setText(busy ? "后台识别中，可继续浏览和操作" : modelLabel() + " 图片识别已就绪");
     }
 
     private void animateIntro(LinearLayout root) {
@@ -567,12 +623,57 @@ public class MainActivity extends Activity implements RecordAdapter.OnRecordActi
     }
 
     private String getApiKey() {
-        return getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GEMINI_API_KEY, "");
+        return getApiKey(getProvider());
     }
 
-    private void saveApiKey(String key) {
+    private String getApiKey(String provider) {
+        String keyName = PROVIDER_SILICONFLOW.equals(provider) ? KEY_SILICONFLOW_API_KEY : KEY_GEMINI_API_KEY;
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getString(keyName, "");
+    }
+
+    private void saveApiKey(String provider, String key) {
+        String keyName = PROVIDER_SILICONFLOW.equals(provider) ? KEY_SILICONFLOW_API_KEY : KEY_GEMINI_API_KEY;
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        prefs.edit().putString(KEY_GEMINI_API_KEY, key == null ? "" : key.trim()).apply();
+        prefs.edit().putString(keyName, key == null ? "" : key.trim()).apply();
+    }
+
+    private String getProvider() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PROVIDER, PROVIDER_SILICONFLOW);
+    }
+
+    private void saveProvider(String provider) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_PROVIDER, provider).apply();
+    }
+
+    private String modelLabel() {
+        return PROVIDER_SILICONFLOW.equals(getProvider()) ? "国内 " + getSiliconFlowModel() : "Gemini";
+    }
+
+    private String keyHint(String provider) {
+        return PROVIDER_SILICONFLOW.equals(provider) ? "硅基流动 sk-..." : "Google AIza...";
+    }
+
+    private String getSiliconFlowModel() {
+        String model = getSharedPreferences(PREFS, MODE_PRIVATE).getString(
+                KEY_SILICONFLOW_MODEL,
+                GeminiImageAnalyzer.DEFAULT_SILICONFLOW_MODEL);
+        if ("zai-org/GLM-4.6V".equals(model)
+                || "Qwen/Qwen2.5-VL-7B-Instruct".equals(model)
+                || "Qwen/Qwen3-VL-Embedding-8B".equals(model)) {
+            return GeminiImageAnalyzer.DEFAULT_SILICONFLOW_MODEL;
+        }
+        return model;
+    }
+
+    private void saveSiliconFlowModel(String model) {
+        String clean = model == null ? "" : model.trim();
+        if (clean.isEmpty()) {
+            clean = GeminiImageAnalyzer.DEFAULT_SILICONFLOW_MODEL;
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_SILICONFLOW_MODEL, clean)
+                .apply();
     }
 
     private String value(EditText input, String fallback) {
